@@ -1,0 +1,1 @@
+docker build -t rhodie/rh-cognitv_dev -f Dockerfile.dev .
