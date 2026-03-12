@@ -69,6 +69,7 @@ from .validation import (
     InputSchemaValidator,
     ValidationPipeline,
 )
+from .dag_orchestrator import DAGOrchestrator
 
 __all__ = [
     # Protocols
@@ -129,4 +130,6 @@ __all__ = [
     "InputSchemaValidator",
     "DependencyValidator",
     "BudgetValidator",
+    # Orchestrator
+    "DAGOrchestrator",
 ]
