@@ -88,6 +88,8 @@ from .state_middleware import StateSnapshotMiddleware
 from .context_store import ContextStore
 from .memory_store import MemoryStore
 from .artifact_store import ArtifactStore
+from .log_collector import LogCollector, LogEntry
+from .trace_collector import TraceCollector, Span, SpanEvent, SpanStatus
 
 __all__ = [
     # Types
@@ -179,4 +181,11 @@ __all__ = [
     "ContextStore",
     "MemoryStore",
     "ArtifactStore",
+    # Phase 6 — Observability
+    "LogCollector",
+    "LogEntry",
+    "TraceCollector",
+    "Span",
+    "SpanEvent",
+    "SpanStatus",
 ]
