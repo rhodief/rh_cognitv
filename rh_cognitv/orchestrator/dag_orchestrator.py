@@ -1,5 +1,5 @@
 """
-DAGOrchestrator — core traversal engine (Stage 1: sequential).
+DAGOrchestrator — core traversal engine.
 
 DD-L2-03: Topological Sort + Ready Queue.
 DI-L2-06: Interrupt check per-node.
@@ -8,11 +8,13 @@ The orchestrator:
 1. Takes a frozen PlanDAG and data
 2. Iterates through nodes in topological order via a ready queue
 3. For each node: validate → execute via adapter → snapshot state → record
-4. Returns the completed ExecutionDAG
+4. Parallel branches execute concurrently via asyncio.gather (Phase 6)
+5. Returns the completed ExecutionDAG
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from rh_cognitv.execution_platform.errors import InterruptError
@@ -71,7 +73,11 @@ class DAGOrchestrator(OrchestratorProtocol):
     # ── Public API ──
 
     async def run(self, dag: PlanDAG, data: Any = None) -> ExecutionDAG:
-        """Execute a PlanDAG sequentially and return the ExecutionDAG.
+        """Execute a PlanDAG and return the ExecutionDAG.
+
+        Ready-queue nodes are executed in parallel via ``asyncio.gather``.
+        If any node in a parallel batch fails, the DAG stops after the
+        batch completes (remaining batches are not started).
 
         Raises:
             InterruptError: If ``interrupt()`` was called during traversal.
@@ -87,30 +93,36 @@ class DAGOrchestrator(OrchestratorProtocol):
             completed: set[str] = set()
 
             while ready:
-                for node_id in ready:
-                    if self._interrupted:
+                if self._interrupted:
+                    self._status = DAGRunStatus.INTERRUPTED
+                    raise InterruptError("DAG execution interrupted by user")
+
+                # Execute all ready nodes in parallel
+                results = await asyncio.gather(
+                    *[
+                        self._process_node(node_id, current_data, completed, dag)
+                        for node_id in ready
+                    ],
+                    return_exceptions=True,
+                )
+
+                # Process results from the parallel batch
+                batch_failed = False
+                for node_id, result in zip(ready, results):
+                    if isinstance(result, InterruptError):
                         self._status = DAGRunStatus.INTERRUPTED
-                        raise InterruptError("DAG execution interrupted by user")
-
-                    node = dag.get_node(node_id)
-
-                    if isinstance(node, FlowNode):
-                        flow_ok = await self._run_flow_node(
-                            node, current_data, completed, dag
-                        )
-                        completed.add(node_id)
-                        if not flow_ok:
-                            self._status = DAGRunStatus.FAILED
-                            return self._execution_dag
-                        continue
-
-                    result = await self._run_node(node, current_data, completed, dag)
-                    self._node_results[node_id] = result
-                    completed.add(node_id)
-
-                    if not result.ok:
+                        raise result
+                    if isinstance(result, BaseException):
                         self._status = DAGRunStatus.FAILED
-                        return self._execution_dag
+                        raise result
+                    # result is (ok: bool)
+                    completed.add(node_id)
+                    if not result:
+                        batch_failed = True
+
+                if batch_failed:
+                    self._status = DAGRunStatus.FAILED
+                    return self._execution_dag
 
                 ready = dag.get_newly_ready_nodes(completed)
 
@@ -140,6 +152,26 @@ class DAGOrchestrator(OrchestratorProtocol):
         return self._execution_dag
 
     # ── Internal ──
+
+    async def _process_node(
+        self,
+        node_id: str,
+        data: Any,
+        completed: set[str],
+        dag: PlanDAG,
+    ) -> bool:
+        """Dispatch a single node (execution or flow). Returns True if ok."""
+        if self._interrupted:
+            raise InterruptError("DAG execution interrupted by user")
+
+        node = dag.get_node(node_id)
+
+        if isinstance(node, FlowNode):
+            return await self._run_flow_node(node, data, completed, dag)
+
+        result = await self._run_node(node, data, completed, dag)
+        self._node_results[node_id] = result
+        return result.ok
 
     async def _run_node(
         self,
@@ -231,25 +263,53 @@ class DAGOrchestrator(OrchestratorProtocol):
             self._node_results[node.id] = result
             return False
 
-        # Handle ForEach expansion: execute inner node once per item
+        # Handle ForEach expansion: execute inner node for each item
         if flow_result.expanded_node_ids and isinstance(node, ForEachNode):
             inner_id = flow_result.expanded_node_ids[0]
             items = flow_result.data if flow_result.data is not None else []
             inner_node = dag.get_node(inner_id)
 
-            for item in items:
-                inner_result = await self._run_node(
-                    inner_node, item, completed, dag
-                )
-                self._node_results[inner_id] = inner_result
-                if not inner_result.ok and node.failure_strategy == "fail_fast":
-                    fail_result = NodeResult.failure(
-                        error_message=f"ForEach inner node '{inner_id}' failed",
-                        error_category="FLOW",
+            if node.failure_strategy == "collect_all":
+                # Run all items in parallel, collect partial results
+                if items:
+                    gather_results = await asyncio.gather(
+                        *[
+                            self._run_node(inner_node, item, completed, dag)
+                            for item in items
+                        ],
+                        return_exceptions=True,
                     )
-                    self._execution_dag.record(node, fail_result)
-                    self._node_results[node.id] = fail_result
-                    return False
+                    any_failed = False
+                    for r in gather_results:
+                        if isinstance(r, BaseException):
+                            any_failed = True
+                        elif isinstance(r, NodeResult):
+                            self._node_results[inner_id] = r
+                            if not r.ok:
+                                any_failed = True
+                    if any_failed:
+                        fail_result = NodeResult.failure(
+                            error_message=f"ForEach collect_all: some iterations of '{inner_id}' failed",
+                            error_category="FLOW",
+                        )
+                        self._execution_dag.record(node, fail_result)
+                        self._node_results[node.id] = fail_result
+                        return False
+            else:
+                # fail_fast: stop on first failure (sequential)
+                for item in items:
+                    inner_result = await self._run_node(
+                        inner_node, item, completed, dag
+                    )
+                    self._node_results[inner_id] = inner_result
+                    if not inner_result.ok:
+                        fail_result = NodeResult.failure(
+                            error_message=f"ForEach inner node '{inner_id}' failed",
+                            error_category="FLOW",
+                        )
+                        self._execution_dag.record(node, fail_result)
+                        self._node_results[node.id] = fail_result
+                        return False
 
             completed.add(inner_id)
 
