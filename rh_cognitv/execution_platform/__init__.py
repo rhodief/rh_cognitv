@@ -58,6 +58,8 @@ from .protocols import (
     TraceCollectorProtocol,
 )
 from .types import ID, Ext, Timestamp, generate_ulid, now_timestamp, parse_timestamp
+from .budget import BudgetTracker
+from .event_bus import EventBus
 
 __all__ = [
     # Types
@@ -118,4 +120,7 @@ __all__ = [
     "BudgetTrackerProtocol",
     "LogCollectorProtocol",
     "TraceCollectorProtocol",
+    # Concrete implementations — Phase 2
+    "EventBus",
+    "BudgetTracker",
 ]
