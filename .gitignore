@@ -1,2 +1,3 @@
 .env
 rh_cognitv.egg-info
+__pycache__
