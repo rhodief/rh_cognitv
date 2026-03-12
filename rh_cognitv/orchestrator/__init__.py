@@ -55,6 +55,20 @@ from .plan_dag import (
     PlanDAG,
 )
 from .execution_dag import ExecutionDAG
+from .adapters import (
+    AdapterRegistry,
+    DataNodeAdapter,
+    FunctionNodeAdapter,
+    PlatformRef,
+    TextNodeAdapter,
+    ToolNodeAdapter,
+)
+from .validation import (
+    BudgetValidator,
+    DependencyValidator,
+    InputSchemaValidator,
+    ValidationPipeline,
+)
 
 __all__ = [
     # Protocols
@@ -103,4 +117,16 @@ __all__ = [
     "MissingNodeError",
     "DuplicateEdgeError",
     "FrozenDAGError",
+    # Adapters
+    "AdapterRegistry",
+    "PlatformRef",
+    "TextNodeAdapter",
+    "DataNodeAdapter",
+    "FunctionNodeAdapter",
+    "ToolNodeAdapter",
+    # Validation
+    "ValidationPipeline",
+    "InputSchemaValidator",
+    "DependencyValidator",
+    "BudgetValidator",
 ]
