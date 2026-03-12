@@ -60,7 +60,7 @@ class CountingTextHandler(EventHandlerProtocol[LLMResultData]):
         self.call_count = 0
         self.tokens_per_call = tokens_per_call
 
-    async def execute(
+    async def __call__(
         self, event: Any, data: Any, configs: Any
     ) -> ExecutionResult[LLMResultData]:
         self.call_count += 1
@@ -86,7 +86,7 @@ class FailThenSucceedHandler(EventHandlerProtocol[LLMResultData]):
         self._fail_count = fail_count
         self._attempts = 0
 
-    async def execute(
+    async def __call__(
         self, event: Any, data: Any, configs: Any
     ) -> ExecutionResult[LLMResultData]:
         self._attempts += 1
@@ -157,7 +157,7 @@ class TestFullLifecycle:
         await bus.emit(running)
 
         # 3) Execute through PolicyChain
-        result = await chain.execute(handler, event, None, None)
+        result = await chain(handler, event, None, None)
 
         # 4) SUCCESS
         success = event.model_copy(update={"status": EventStatus.SUCCESS})
@@ -348,15 +348,15 @@ class TestBudgetExhaustion:
         event = _text_event()
 
         # Calls 1 and 2 succeed (BudgetPolicy.after_execute auto-consumes)
-        await chain.execute(handler, event, None, None)
-        await chain.execute(handler, event, None, None)
+        await chain(handler, event, None, None)
+        await chain(handler, event, None, None)
         assert tracker.tokens_used == 80
         assert tracker.calls_made == 2
 
         # Call 3: before_execute passes (80 < 100), but after_execute tries
         # to consume 40 more → 120 > 100 → BudgetError
         with pytest.raises(BudgetError, match="Token budget exceeded"):
-            await chain.execute(handler, event, None, None)
+            await chain(handler, event, None, None)
 
     @pytest.mark.asyncio
     async def test_budget_blocks_before_execute(self):
@@ -368,14 +368,14 @@ class TestBudgetExhaustion:
         event = _text_event()
 
         # Calls 1 and 2 (after_execute auto-consumes 1 call each)
-        await chain.execute(handler, event, None, None)
-        await chain.execute(handler, event, None, None)
+        await chain(handler, event, None, None)
+        await chain(handler, event, None, None)
         assert tracker.calls_made == 2
 
         # Call 3 blocked by before_execute (calls_made=2 >= call_budget=2)
         assert not tracker.can_proceed()
         with pytest.raises(BudgetError, match="Budget exhausted"):
-            await chain.execute(handler, event, None, None)
+            await chain(handler, event, None, None)
 
     @pytest.mark.asyncio
     async def test_budget_with_logging(self):
@@ -392,14 +392,14 @@ class TestBudgetExhaustion:
 
         # Emit RUNNING and execute (BudgetPolicy.after_execute auto-consumes)
         await bus.emit(event.model_copy(update={"status": EventStatus.RUNNING}))
-        await chain.execute(handler, event, None, None)
+        await chain(handler, event, None, None)
         await bus.emit(event.model_copy(update={"status": EventStatus.SUCCESS}))
 
         # Second call should fail
         event2 = _text_event(event_id="budget-evt-2")
         await bus.emit(event2.model_copy(update={"status": EventStatus.RUNNING}))
         with pytest.raises(BudgetError):
-            await chain.execute(handler, event2, None, None)
+            await chain(handler, event2, None, None)
         await bus.emit(event2.model_copy(update={"status": EventStatus.FAILED}))
 
         # Logs captured both flows
@@ -725,7 +725,7 @@ class TestCrossComponent:
         # Execute an event
         event = _text_event(event_id="full-1")
         await bus.emit(event.model_copy(update={"status": EventStatus.RUNNING}))
-        result = await chain.execute(handler, event, None, None)
+        result = await chain(handler, event, None, None)
         await bus.emit(event.model_copy(update={"status": EventStatus.SUCCESS}))
 
         # Verify everything (BudgetPolicy.after_execute auto-consumed)

@@ -47,7 +47,7 @@ class PolicyChain(PolicyChainProtocol):
             TimeoutPolicy(seconds=30),
             RetryPolicy(max_attempts=3),
         ])
-        result = await chain.execute(handler, event, data, configs)
+        result = await chain(handler, event, data, configs)
 
     Policies run in order for before_execute (first → last),
     reverse order for after_execute (last → first),
@@ -61,7 +61,7 @@ class PolicyChain(PolicyChainProtocol):
         """Append a policy to the chain."""
         self._policies.append(policy)
 
-    async def execute(
+    async def __call__(
         self,
         handler: EventHandlerProtocol[Any],
         event: Any,
@@ -74,7 +74,7 @@ class PolicyChain(PolicyChainProtocol):
             await policy.before_execute(event, data, configs)
 
         try:
-            result = await handler.execute(event, data, configs)
+            result = await handler(event, data, configs)
         except Exception as exc:
             # on_error: reverse order
             for policy in reversed(self._policies):
@@ -151,7 +151,7 @@ class RetryPolicy(PolicyProtocol):
         for attempt in range(1, self.max_attempts + 1):
             self._current_attempt = attempt
             try:
-                result = await handler.execute(event, data, configs)
+                result = await handler(event, data, configs)
                 self._current_attempt = 0
                 return result
             except CognitivError as exc:
@@ -216,7 +216,7 @@ class TimeoutPolicy(PolicyProtocol):
 
         try:
             return await asyncio.wait_for(
-                handler.execute(event, data, configs),
+                handler(event, data, configs),
                 timeout=self.seconds,
             )
         except asyncio.TimeoutError:

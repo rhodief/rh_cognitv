@@ -109,7 +109,7 @@ class EventHandlerProtocol(ABC, Generic[T]):
     """Handler for a specific kind of execution event."""
 
     @abstractmethod
-    async def execute(self, event: Any, data: Any, configs: Any) -> ExecutionResult[T]:
+    async def __call__(self, event: Any, data: Any, configs: Any) -> ExecutionResult[T]:
         """Execute the event and return a typed result."""
         ...
 
@@ -264,7 +264,7 @@ class PolicyChainProtocol(ABC):
     """Composable chain of policies wrapping handler execution."""
 
     @abstractmethod
-    async def execute(
+    async def __call__(
         self,
         handler: EventHandlerProtocol[Any],
         event: Any,

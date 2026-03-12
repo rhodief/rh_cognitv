@@ -47,7 +47,7 @@ class SuccessHandler(EventHandlerProtocol[LLMResultData]):
         self.tokens = tokens
         self.call_count = 0
 
-    async def execute(self, event, data, configs) -> ExecutionResult[LLMResultData]:
+    async def __call__(self, event, data, configs) -> ExecutionResult[LLMResultData]:
         self.call_count += 1
         return ExecutionResult(
             ok=True,
@@ -72,7 +72,7 @@ class FailNTimesHandler(EventHandlerProtocol[LLMResultData]):
         self.tokens = tokens
         self.call_count = 0
 
-    async def execute(self, event, data, configs) -> ExecutionResult[LLMResultData]:
+    async def __call__(self, event, data, configs) -> ExecutionResult[LLMResultData]:
         self.call_count += 1
         if self.call_count <= self.fail_count:
             raise TransientError(f"Transient failure #{self.call_count}")
@@ -90,7 +90,7 @@ class FailNTimesHandler(EventHandlerProtocol[LLMResultData]):
 class PermanentFailHandler(EventHandlerProtocol[LLMResultData]):
     """Always fails with PermanentError."""
 
-    async def execute(self, event, data, configs):
+    async def __call__(self, event, data, configs):
         raise PermanentError("Permanent failure")
 
 
@@ -100,7 +100,7 @@ class SlowHandler(EventHandlerProtocol[LLMResultData]):
     def __init__(self, delay: float = 1.0):
         self.delay = delay
 
-    async def execute(self, event, data, configs) -> ExecutionResult[LLMResultData]:
+    async def __call__(self, event, data, configs) -> ExecutionResult[LLMResultData]:
         await asyncio.sleep(self.delay)
         return ExecutionResult(
             ok=True,
@@ -120,7 +120,7 @@ class TestPolicyChain:
         chain = PolicyChain()
         handler = SuccessHandler()
         event = _make_text_event()
-        result = await chain.execute(handler, event, None, None)
+        result = await chain(handler, event, None, None)
         assert result.ok is True
         assert handler.call_count == 1
 
@@ -150,7 +150,7 @@ class TestPolicyChain:
 
         chain = PolicyChain([PolicyA(), PolicyB()])
         handler = SuccessHandler()
-        await chain.execute(handler, _make_text_event(), None, None)
+        await chain(handler, _make_text_event(), None, None)
         assert order == ["A", "B"]
 
     @pytest.mark.asyncio
@@ -179,7 +179,7 @@ class TestPolicyChain:
 
         chain = PolicyChain([PolicyA(), PolicyB()])
         handler = SuccessHandler()
-        await chain.execute(handler, _make_text_event(), None, None)
+        await chain(handler, _make_text_event(), None, None)
         assert order == ["B", "A"]
 
     @pytest.mark.asyncio
@@ -209,7 +209,7 @@ class TestPolicyChain:
         chain = PolicyChain([PolicyA(), PolicyB()])
         handler = PermanentFailHandler()
         with pytest.raises(PermanentError):
-            await chain.execute(handler, _make_text_event(), None, None)
+            await chain(handler, _make_text_event(), None, None)
         assert order == ["B", "A"]
 
     @pytest.mark.asyncio
@@ -227,7 +227,7 @@ class TestPolicyChain:
         chain = PolicyChain([AbortPolicy()])
         handler = SuccessHandler()
         with pytest.raises(BudgetError):
-            await chain.execute(handler, _make_text_event(), None, None)
+            await chain(handler, _make_text_event(), None, None)
         assert handler.call_count == 0
 
     @pytest.mark.asyncio
@@ -247,7 +247,7 @@ class TestPolicyChain:
 
         chain.add(TrackPolicy())
         handler = SuccessHandler()
-        await chain.execute(handler, _make_text_event(), None, None)
+        await chain(handler, _make_text_event(), None, None)
         assert order == ["before", "after"]
 
 
@@ -445,18 +445,18 @@ class TestBudgetPolicy:
         event = _make_text_event()
 
         # First call succeeds
-        result = await chain.execute(handler, event, None, None)
+        result = await chain(handler, event, None, None)
         assert result.ok is True
         assert tracker.calls_made == 1
 
         # Second call succeeds
-        result = await chain.execute(handler, event, None, None)
+        result = await chain(handler, event, None, None)
         assert result.ok is True
         assert tracker.calls_made == 2
 
         # Third call blocked
         with pytest.raises(BudgetError):
-            await chain.execute(handler, event, None, None)
+            await chain(handler, event, None, None)
 
 
 # ──────────────────────────────────────────────
@@ -489,7 +489,7 @@ class TestPolicyComposition:
         call_count = 0
 
         class SlowThenFastHandler(EventHandlerProtocol[LLMResultData]):
-            async def execute(self, event, data, configs):
+            async def __call__(self, event, data, configs):
                 nonlocal call_count
                 call_count += 1
                 if call_count <= 1:
@@ -506,7 +506,7 @@ class TestPolicyComposition:
                 self.inner = inner
                 self.tp = tp
 
-            async def execute(self, event, data, configs):
+            async def __call__(self, event, data, configs):
                 return await self.tp.execute_with_timeout(
                     self.inner, event, data, configs
                 )

@@ -65,7 +65,7 @@ class HandlerRegistry(HandlerRegistryProtocol):
         handler = self._handlers.get(event.kind)
         if handler is None:
             raise ValidationError(f"No handler registered for kind: {event.kind.value}")
-        return await handler.execute(event, data, configs)
+        return await handler(event, data, configs)
 
     def has_handler(self, kind: EventKind) -> bool:
         """Check if a handler is registered for the given kind."""
@@ -81,10 +81,10 @@ class TextHandler(EventHandlerProtocol[LLMResultData]):
     """Handler for TEXT events — LLM text generation.
 
     This is a base implementation that returns a placeholder result.
-    Subclass and override `execute()` to wire to a real LLM SDK.
+    Subclass and override `__call__()` to wire to a real LLM SDK.
     """
 
-    async def execute(
+    async def __call__(
         self, event: ExecutionEvent, data: Any, configs: Any
     ) -> ExecutionResult[LLMResultData]:
         if not isinstance(event.payload, TextPayload):
@@ -104,7 +104,7 @@ class DataHandler(EventHandlerProtocol[LLMResultData]):
     Base implementation returning a placeholder. Subclass for real use.
     """
 
-    async def execute(
+    async def __call__(
         self, event: ExecutionEvent, data: Any, configs: Any
     ) -> ExecutionResult[LLMResultData]:
         if not isinstance(event.payload, DataPayload):
@@ -124,7 +124,7 @@ class FunctionHandler(EventHandlerProtocol[FunctionResultData]):
     Base implementation returning a placeholder. Subclass for real use.
     """
 
-    async def execute(
+    async def __call__(
         self, event: ExecutionEvent, data: Any, configs: Any
     ) -> ExecutionResult[FunctionResultData]:
         if not isinstance(event.payload, FunctionPayload):
@@ -144,7 +144,7 @@ class ToolHandler(EventHandlerProtocol[ToolResultData]):
     Base implementation returning a placeholder. Subclass for real use.
     """
 
-    async def execute(
+    async def __call__(
         self, event: ExecutionEvent, data: Any, configs: Any
     ) -> ExecutionResult[ToolResultData]:
         if not isinstance(event.payload, ToolPayload):

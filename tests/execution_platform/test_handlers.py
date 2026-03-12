@@ -105,7 +105,7 @@ class TestTextHandler:
             kind=EventKind.TEXT,
             payload=TextPayload(prompt="hello", model="gpt-4"),
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.ok is True
         assert isinstance(result.value, LLMResultData)
         assert result.value.model == "gpt-4"
@@ -116,7 +116,7 @@ class TestTextHandler:
         event = ExecutionEvent(
             kind=EventKind.TEXT, payload=TextPayload(prompt="x")
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.value.model == ""
 
     @pytest.mark.asyncio
@@ -127,7 +127,7 @@ class TestTextHandler:
             payload=FunctionPayload(function_name="f"),
         )
         with pytest.raises(ValidationError, match="TextHandler expects TextPayload"):
-            await handler.execute(event, None, None)
+            await handler(event, None, None)
 
 
 # ──────────────────────────────────────────────
@@ -143,7 +143,7 @@ class TestDataHandler:
             kind=EventKind.DATA,
             payload=DataPayload(prompt="extract", model="gpt-4"),
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.ok is True
         assert isinstance(result.value, LLMResultData)
 
@@ -154,7 +154,7 @@ class TestDataHandler:
             kind=EventKind.TEXT, payload=TextPayload(prompt="x")
         )
         with pytest.raises(ValidationError, match="DataHandler expects DataPayload"):
-            await handler.execute(event, None, None)
+            await handler(event, None, None)
 
 
 # ──────────────────────────────────────────────
@@ -170,7 +170,7 @@ class TestFunctionHandler:
             kind=EventKind.FUNCTION,
             payload=FunctionPayload(function_name="my_func"),
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.ok is True
         assert isinstance(result.value, FunctionResultData)
         assert result.value.return_value is None
@@ -185,7 +185,7 @@ class TestFunctionHandler:
         with pytest.raises(
             ValidationError, match="FunctionHandler expects FunctionPayload"
         ):
-            await handler.execute(event, None, None)
+            await handler(event, None, None)
 
 
 # ──────────────────────────────────────────────
@@ -201,7 +201,7 @@ class TestToolHandler:
             kind=EventKind.TOOL,
             payload=ToolPayload(prompt="use search", model="gpt-4"),
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.ok is True
         assert isinstance(result.value, ToolResultData)
         assert isinstance(result.value.llm_result, LLMResultData)
@@ -215,7 +215,7 @@ class TestToolHandler:
             kind=EventKind.TEXT, payload=TextPayload(prompt="x")
         )
         with pytest.raises(ValidationError, match="ToolHandler expects ToolPayload"):
-            await handler.execute(event, None, None)
+            await handler(event, None, None)
 
     @pytest.mark.asyncio
     async def test_model_defaults_to_empty(self):
@@ -223,7 +223,7 @@ class TestToolHandler:
         event = ExecutionEvent(
             kind=EventKind.TOOL, payload=ToolPayload(prompt="x")
         )
-        result = await handler.execute(event, None, None)
+        result = await handler(event, None, None)
         assert result.value.llm_result.model == ""
 
 
