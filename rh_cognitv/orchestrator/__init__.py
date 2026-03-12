@@ -42,6 +42,19 @@ from .protocols import (
     OrchestratorProtocol,
     ValidationPipelineProtocol,
 )
+from .plan_dag import (
+    DAG,
+    DAGBuilder,
+    CycleError,
+    DAGError,
+    DisconnectedError,
+    DuplicateEdgeError,
+    DuplicateNodeError,
+    FrozenDAGError,
+    MissingNodeError,
+    PlanDAG,
+)
+from .execution_dag import ExecutionDAG
 
 __all__ = [
     # Protocols
@@ -77,4 +90,17 @@ __all__ = [
     "GetNode",
     "IfNotOkNode",
     "CompositeNode",
+    # DAG Data Structures
+    "DAG",
+    "PlanDAG",
+    "DAGBuilder",
+    "ExecutionDAG",
+    # DAG Errors
+    "DAGError",
+    "CycleError",
+    "DisconnectedError",
+    "DuplicateNodeError",
+    "MissingNodeError",
+    "DuplicateEdgeError",
+    "FrozenDAGError",
 ]
