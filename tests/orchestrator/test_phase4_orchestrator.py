@@ -715,8 +715,8 @@ class TestValidationIntegration:
 
 class TestFlowNodeSkip:
     @pytest.mark.asyncio
-    async def test_flow_node_skipped(self) -> None:
-        """FlowNodes should be skipped in Phase 4 (deferred to Phase 5)."""
+    async def test_flow_node_handled(self) -> None:
+        """FlowNodes are handled via FlowHandlerRegistry (Phase 5)."""
         dag = (
             DAGBuilder()
             .add_node("a", TextNode(id="a", prompt="A"))
@@ -729,13 +729,12 @@ class TestFlowNodeSkip:
         orch = _build_orchestrator()
         exec_dag = await orch.run(dag)
 
-        # fe should be SKIPPED
-        skipped = exec_dag.get_by_status(NodeExecutionStatus.SKIPPED)
-        assert len(skipped) == 1
-        assert skipped[0].node_id == "fe"
+        # fe should be SUCCESS (handled by FlowHandlerRegistry)
+        fe_entries = exec_dag.get_all_entries_for_node("fe")
+        assert any(e.status == NodeExecutionStatus.SUCCESS for e in fe_entries)
         # a and b should succeed
         success = exec_dag.get_by_status(NodeExecutionStatus.SUCCESS)
-        assert {e.node_id for e in success} == {"a", "b"}
+        assert {"a", "b"}.issubset({e.node_id for e in success})
 
 
 # ──────────────────────────────────────────────

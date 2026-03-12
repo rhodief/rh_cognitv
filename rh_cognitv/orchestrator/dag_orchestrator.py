@@ -20,6 +20,7 @@ from rh_cognitv.execution_platform.protocols import ExecutionStateProtocol
 
 from .adapters import AdapterRegistry, PlatformRef
 from .execution_dag import ExecutionDAG
+from .flow_nodes import DAGTraversalState, FlowHandlerRegistry
 from .models import (
     DAGRunStatus,
     NodeExecutionStatus,
@@ -42,6 +43,7 @@ class DAGOrchestrator(OrchestratorProtocol):
         state: L3 ExecutionState for snapshot/time-travel.
         validation: Optional pre-flight validation pipeline.
         config: Orchestrator-wide defaults (timeout, retries).
+        flow_handler_registry: Optional FlowNode handler registry.
     """
 
     def __init__(
@@ -52,16 +54,19 @@ class DAGOrchestrator(OrchestratorProtocol):
         state: ExecutionStateProtocol,
         validation: ValidationPipeline | None = None,
         config: OrchestratorConfig | None = None,
+        flow_handler_registry: FlowHandlerRegistry | None = None,
     ) -> None:
         self._adapter_registry = adapter_registry
         self._platform = platform
         self._state = state
         self._validation = validation or ValidationPipeline()
         self._config = config or platform.config
+        self._flow_registry = flow_handler_registry or FlowHandlerRegistry.with_defaults()
 
         self._execution_dag = ExecutionDAG()
         self._interrupted = False
         self._status = DAGRunStatus.PENDING
+        self._node_results: dict[str, NodeResult] = {}
 
     # ── Public API ──
 
@@ -72,7 +77,9 @@ class DAGOrchestrator(OrchestratorProtocol):
             InterruptError: If ``interrupt()`` was called during traversal.
         """
         self._execution_dag = ExecutionDAG()
+        self._node_results = {}
         self._status = DAGRunStatus.RUNNING
+        current_data = data
 
         self._state.add_level()
         try:
@@ -87,13 +94,18 @@ class DAGOrchestrator(OrchestratorProtocol):
 
                     node = dag.get_node(node_id)
 
-                    # Skip FlowNodes for now (Phase 5)
                     if isinstance(node, FlowNode):
-                        self._execution_dag.mark_skipped(node)
+                        flow_ok = await self._run_flow_node(
+                            node, current_data, completed, dag
+                        )
                         completed.add(node_id)
+                        if not flow_ok:
+                            self._status = DAGRunStatus.FAILED
+                            return self._execution_dag
                         continue
 
-                    result = await self._run_node(node, data, completed, dag)
+                    result = await self._run_node(node, current_data, completed, dag)
+                    self._node_results[node_id] = result
                     completed.add(node_id)
 
                     if not result.ok:
@@ -179,3 +191,97 @@ class DAGOrchestrator(OrchestratorProtocol):
         self._execution_dag.record(node, result, state_version=version)
 
         return result
+
+    async def _run_flow_node(
+        self,
+        node: FlowNode,
+        data: Any,
+        completed: set[str],
+        dag: PlanDAG,
+    ) -> bool:
+        """Dispatch a FlowNode to its handler and process the FlowResult.
+
+        Returns True if the flow succeeded, False if the DAG should stop.
+        """
+        from .flow_nodes import ForEachNode
+
+        self._execution_dag.record_start(node)
+
+        dag_state = DAGTraversalState(
+            completed_node_ids=set(completed),
+            execution_dag=self._execution_dag,
+            node_results=dict(self._node_results),
+        )
+
+        try:
+            flow_result = await self._flow_registry.handle(node, data, dag_state)
+        except Exception as exc:
+            result = NodeResult.failure(
+                error_message=str(exc), error_category="FLOW"
+            )
+            self._execution_dag.record(node, result)
+            return False
+
+        if not flow_result.ok:
+            result = NodeResult.failure(
+                error_message=flow_result.error_message or "Flow handler failed",
+                error_category="FLOW",
+            )
+            self._execution_dag.record(node, result)
+            self._node_results[node.id] = result
+            return False
+
+        # Handle ForEach expansion: execute inner node once per item
+        if flow_result.expanded_node_ids and isinstance(node, ForEachNode):
+            inner_id = flow_result.expanded_node_ids[0]
+            items = flow_result.data if flow_result.data is not None else []
+            inner_node = dag.get_node(inner_id)
+
+            for item in items:
+                inner_result = await self._run_node(
+                    inner_node, item, completed, dag
+                )
+                self._node_results[inner_id] = inner_result
+                if not inner_result.ok and node.failure_strategy == "fail_fast":
+                    fail_result = NodeResult.failure(
+                        error_message=f"ForEach inner node '{inner_id}' failed",
+                        error_category="FLOW",
+                    )
+                    self._execution_dag.record(node, fail_result)
+                    self._node_results[node.id] = fail_result
+                    return False
+
+            completed.add(inner_id)
+
+        # Handle skipped nodes
+        for skip_id in flow_result.skipped_node_ids:
+            try:
+                skip_node = dag.get_node(skip_id)
+                self._execution_dag.mark_skipped(skip_node)
+                completed.add(skip_id)
+            except KeyError:
+                pass
+
+        # Handle redirect
+        if flow_result.redirect_to:
+            try:
+                redirect_node = dag.get_node(flow_result.redirect_to)
+                redirect_result = await self._run_node(
+                    redirect_node, flow_result.data or data, completed, dag
+                )
+                self._node_results[flow_result.redirect_to] = redirect_result
+                completed.add(flow_result.redirect_to)
+            except KeyError:
+                fail_result = NodeResult.failure(
+                    error_message=f"Redirect target '{flow_result.redirect_to}' not found",
+                    error_category="FLOW",
+                )
+                self._execution_dag.record(node, fail_result)
+                self._node_results[node.id] = fail_result
+                return False
+
+        # Record success for the flow node itself
+        flow_node_result = NodeResult.success(value=flow_result.data)
+        self._execution_dag.record(node, flow_node_result)
+        self._node_results[node.id] = flow_node_result
+        return True
