@@ -58,8 +58,31 @@ from .protocols import (
     TraceCollectorProtocol,
 )
 from .types import ID, Ext, Timestamp, generate_ulid, now_timestamp, parse_timestamp
+from .types import EntryRef
 from .budget import BudgetTracker
 from .event_bus import EventBus
+from .events import (
+    DataPayload,
+    EscalationRequested,
+    EscalationResolved,
+    ExecutionEvent,
+    FunctionPayload,
+    TextPayload,
+    ToolPayload,
+)
+from .handlers import (
+    DataHandler,
+    FunctionHandler,
+    HandlerRegistry,
+    TextHandler,
+    ToolHandler,
+)
+from .policies import (
+    BudgetPolicy,
+    PolicyChain,
+    RetryPolicy,
+    TimeoutPolicy,
+)
 
 __all__ = [
     # Types
@@ -123,4 +146,25 @@ __all__ = [
     # Concrete implementations — Phase 2
     "EventBus",
     "BudgetTracker",
+    # Phase 3 — Events
+    "ExecutionEvent",
+    "TextPayload",
+    "DataPayload",
+    "FunctionPayload",
+    "ToolPayload",
+    "EscalationRequested",
+    "EscalationResolved",
+    # Phase 3 — Handlers
+    "HandlerRegistry",
+    "TextHandler",
+    "DataHandler",
+    "FunctionHandler",
+    "ToolHandler",
+    # Phase 3 — Policies
+    "PolicyChain",
+    "RetryPolicy",
+    "TimeoutPolicy",
+    "BudgetPolicy",
+    # Phase 3 — Types
+    "EntryRef",
 ]
