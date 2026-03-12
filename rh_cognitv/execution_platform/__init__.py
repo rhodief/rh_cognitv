@@ -83,6 +83,8 @@ from .policies import (
     RetryPolicy,
     TimeoutPolicy,
 )
+from .state import ExecutionState
+from .state_middleware import StateSnapshotMiddleware
 
 __all__ = [
     # Types
@@ -167,4 +169,7 @@ __all__ = [
     "BudgetPolicy",
     # Phase 3 — Types
     "EntryRef",
+    # Phase 4 — State Management
+    "ExecutionState",
+    "StateSnapshotMiddleware",
 ]
