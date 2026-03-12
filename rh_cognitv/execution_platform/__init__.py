@@ -85,6 +85,9 @@ from .policies import (
 )
 from .state import ExecutionState
 from .state_middleware import StateSnapshotMiddleware
+from .context_store import ContextStore
+from .memory_store import MemoryStore
+from .artifact_store import ArtifactStore
 
 __all__ = [
     # Types
@@ -172,4 +175,8 @@ __all__ = [
     # Phase 4 — State Management
     "ExecutionState",
     "StateSnapshotMiddleware",
+    # Phase 5 — Context Store
+    "ContextStore",
+    "MemoryStore",
+    "ArtifactStore",
 ]
