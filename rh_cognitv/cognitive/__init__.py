@@ -68,6 +68,7 @@ from .builtin_skills import (
     ReviewSkill,
     TextGenerationSkill,
 )
+from .meta_skill import MetaSkill
 
 __all__ = [
     # Protocols
@@ -131,4 +132,6 @@ __all__ = [
     "DataExtractionSkill",
     "CodeGenerationSkill",
     "ReviewSkill",
+    # MetaSkill
+    "MetaSkill",
 ]
