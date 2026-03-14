@@ -18,7 +18,11 @@ import asyncio
 from typing import Any
 
 from rh_cognitv.execution_platform.errors import InterruptError
-from rh_cognitv.execution_platform.protocols import ExecutionStateProtocol
+from rh_cognitv.execution_platform.models import Artifact, Memory
+from rh_cognitv.execution_platform.protocols import (
+    ContextStoreProtocol,
+    ExecutionStateProtocol,
+)
 
 from .adapters import AdapterRegistry, PlatformRef
 from .execution_dag import ExecutionDAG
@@ -46,6 +50,8 @@ class DAGOrchestrator(OrchestratorProtocol):
         validation: Optional pre-flight validation pipeline.
         config: Orchestrator-wide defaults (timeout, retries).
         flow_handler_registry: Optional FlowNode handler registry.
+        context_store: Optional L3 ContextStore for resolving context_refs.
+        context_serializer: Optional serializer for rendering resolved context.
     """
 
     def __init__(
@@ -57,6 +63,8 @@ class DAGOrchestrator(OrchestratorProtocol):
         validation: ValidationPipeline | None = None,
         config: OrchestratorConfig | None = None,
         flow_handler_registry: FlowHandlerRegistry | None = None,
+        context_store: ContextStoreProtocol | None = None,
+        context_serializer: Any | None = None,
     ) -> None:
         self._adapter_registry = adapter_registry
         self._platform = platform
@@ -64,6 +72,8 @@ class DAGOrchestrator(OrchestratorProtocol):
         self._validation = validation or ValidationPipeline()
         self._config = config or platform.config
         self._flow_registry = flow_handler_registry or FlowHandlerRegistry.with_defaults()
+        self._context_store = context_store
+        self._context_serializer = context_serializer
 
         self._execution_dag = ExecutionDAG()
         self._interrupted = False
@@ -205,10 +215,13 @@ class DAGOrchestrator(OrchestratorProtocol):
             self._execution_dag.record(node, result)
             return result
 
+        # 3.5 Resolve context_refs (Phase 3.7)
+        resolved_data = await self._resolve_context_refs(node, data)
+
         # 4. Execute via adapter
         try:
             result = await self._adapter_registry.execute(
-                node, data, None, self._platform
+                node, resolved_data, None, self._platform
             )
         except Exception as exc:
             result = NodeResult.failure(
@@ -223,6 +236,74 @@ class DAGOrchestrator(OrchestratorProtocol):
         self._execution_dag.record(node, result, state_version=version)
 
         return result
+
+    async def _resolve_context_refs(
+        self, node: BaseNode, data: Any
+    ) -> Any:
+        """Resolve context_refs from node.ext and merge into data.
+
+        If no context_store is configured or the node has no context_refs,
+        returns data unchanged (backward compatible).
+        """
+        context_refs = node.ext.get("context_refs")
+        if not context_refs or self._context_store is None:
+            return data
+
+        resolved: dict[str, Any] = dict(data) if isinstance(data, dict) else {}
+
+        for ref in context_refs:
+            kind = ref.get("kind")
+            key = ref.get("key", "context")
+            value = None
+
+            if kind == "memory":
+                ref_id = ref.get("id")
+                if ref_id:
+                    entry = await self._context_store.get(ref_id)
+                    if entry is not None:
+                        value = self._extract_text(entry)
+
+            elif kind == "artifact":
+                slug = ref.get("slug")
+                version = ref.get("version")
+                if slug:
+                    entry = await self._context_store.get_artifact(slug, version)
+                    if entry is not None:
+                        value = self._extract_text(entry)
+
+            elif kind == "query":
+                from rh_cognitv.execution_platform.models import MemoryQuery
+
+                query_data = ref.get("query")
+                if query_data:
+                    query = MemoryQuery.model_validate(query_data)
+                    results = await self._context_store.recall(query)
+                    entries = [r.entry for r in results]
+                    if self._context_serializer is not None:
+                        memories = [e for e in entries if isinstance(e, Memory)]
+                        artifacts = [e for e in entries if isinstance(e, Artifact)]
+                        value = self._context_serializer.serialize(memories, artifacts)
+                    else:
+                        value = "\n".join(
+                            self._extract_text(e) for e in entries if e is not None
+                        )
+
+            elif kind == "previous_result":
+                from_step = ref.get("from_step")
+                if from_step and from_step in self._node_results:
+                    value = self._node_results[from_step].value
+
+            if value is not None:
+                resolved[key] = value
+
+        return resolved
+
+    @staticmethod
+    def _extract_text(entry: Any) -> str:
+        """Extract display text from a Memory or Artifact."""
+        if hasattr(entry, "content") and hasattr(entry.content, "text"):
+            return entry.content.text
+        return str(entry)
 
     async def _run_flow_node(
         self,
