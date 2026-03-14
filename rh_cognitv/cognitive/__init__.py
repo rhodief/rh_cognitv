@@ -44,6 +44,10 @@ from .llm import (
     StructuredCall,
     ToolsCall,
 )
+from .skill import (
+    RetryableValidationError,
+    Skill,
+)
 
 __all__ = [
     # Protocols
@@ -88,4 +92,7 @@ __all__ = [
     "CompletionCall",
     "StructuredCall",
     "ToolsCall",
+    # Skill
+    "Skill",
+    "RetryableValidationError",
 ]
