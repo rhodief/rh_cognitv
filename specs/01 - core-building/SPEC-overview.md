@@ -171,13 +171,16 @@ Each phase produces a usable, independently testable deliverable.
 
 | Step | Deliverable | Depends On |
 |------|-------------|------------|
-| 3.1 | LLM abstraction — provider-agnostic interface | — |
-| 3.2 | `Skill` base class — atomic cognitive unit | 3.1 |
-| 3.3 | Prompt management — template engine, context injection | 3.2, 1.5 |
-| 3.4 | `ContextSerializer` — render memories into LLM prompts | 1.5, 3.3 |
-| 3.5 | Adapter L1→L2 — skill intent → PlanDAG nodes | 3.2, Phase 2 |
-| 3.6 | Built-in skills — TextGeneration, DataExtraction, CodeGeneration | 3.2, 3.3 |
-| 3.7 | `MetaSkill` interface (stub for V2) | 3.2 |
+| 3.1 | Protocols + Models — `SkillProtocol`, `LLMProtocol`, `ContextRef`, `SkillStep`, `SkillPlan`, `SkillResult`, `SkillContext`, `SkillProvenance` | L3 types, L2 types |
+| 3.2 | LLM abstraction — `LLMProtocol` + `MockLLM` for testing | 3.1 |
+| 3.3 | `Skill` base class — plan/interpret split + `validate_output()` hook | 3.1, 3.2 |
+| 3.4 | Prompt engine — `PromptBuilder` (programmatic) + `TemplateRenderer` (str.format) → `BuiltPrompt` | 3.1 |
+| 3.5 | `ContextSerializer` — `NaiveSerializer` + `SectionSerializer` (group by MemoryRole) | 3.1 |
+| 3.6 | Adapter L1→L2 — `SkillToDAGAdapter.to_dag()` (SkillPlan → PlanDAG, context_refs → ext) + `ResultAdapter.from_result()` | 3.1, Phase 2 |
+| 3.7 | L2 extension — context resolution hook in `DAGOrchestrator._run_node()` (resolve `context_refs` from ContextStore + node_results before execution) | 3.5, 3.6, Phase 2, Phase 1 |
+| 3.8 | Built-in skills — `TextGeneration`, `DataExtraction`, `CodeGeneration`, `Review` + `ConfigSkill` from `SkillConfig` | 3.3, 3.4, 3.5 |
+| 3.9 | `MetaSkill` interface (V2 stub — `NotImplementedError`) | 3.3 |
+| 3.10 | Integration tests — full pipeline: Skill → Adapter → DAGOrchestrator → L3 handlers → SkillResult. Context resolution round-trip. Replan flow. Output validation retry. | All above |
 | 3.8 | End-to-end integration tests — skill → orchestration → execution | All |
 
 ---
